@@ -1,0 +1,15 @@
+{
+	"folders": [
+		{
+			"path": "relay_control"
+		},
+		{
+			"path": "main_control"
+		}
+	],
+	"settings": {
+		"files.associations": {
+			".funcignore": "ignore",
+		}
+	}
+}

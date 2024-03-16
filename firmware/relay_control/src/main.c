@@ -55,6 +55,7 @@ static void onReceive(uint8_t amount) {
                 break;
         }
     }
+    wdt_reset();
 }
 
 // Handle I2C data read by master. Returns relay status in a single byte.
@@ -68,6 +69,7 @@ static void onReceive(uint8_t amount) {
 static void onRequest(void) {
     uint8_t state = (PORTB & (_BV(RELAY_2) | _BV(RELAY_1))) >> RELAY_1;
     usiTwiTransmitByte(state);
+    wdt_reset();
 }
 
 // Main function
@@ -100,7 +102,6 @@ int main(void) {
     // Safety measure: if I2C master or bus hangs, better turn off relays and reinit
     wdt_enable(WDTO_8S);
     for (;;) {
-        wdt_reset();
         sleep_cpu();
     }
 }

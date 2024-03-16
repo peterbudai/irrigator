@@ -5,8 +5,8 @@ USB_PORT ?= 0
 CONFIG ?= MEASURE
 
 SRC_DIR = src
-TARGET_DIR = out
-TARGET = firmware
+TARGET = relay_control
+TARGET_DIR = ../out/$(TARGET)
 FORMAT = ihex
 
 CDEFS += -DF_CPU=$(FREQ) $(patsubst %,-DCONFIG_%,$(CONFIG))

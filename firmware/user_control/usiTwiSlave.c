@@ -270,7 +270,7 @@ Change Activity:
 #define USI_REQUEST_CALLBACK() \
 { \
     USI_RECEIVE_CALLBACK(); \
-    if(onRequestPtr) onRequestPtr(); \
+    if (onRequestPtr) onRequestPtr(); \
 }
 
 /********************************************************************************

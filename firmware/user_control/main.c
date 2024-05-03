@@ -3,10 +3,10 @@
 Firmware main file for user interface control module.
 
 This firmware turns an ATTiny2/4/85 microcontroller into an I2C slave that
-can receive commands to drive a dual-color LED (or any two LEDs). The LED can
-signal various states via the combination of colors and light/blink patterns.
-The module can also read a state of an active-low pushbutton and report it
-back to the I2C master.
+can receive commands to drive a dual-color LED. The LED can signal various
+states via the combination of colors and light/blink patterns. The module
+can also read a state of an active-low pushbutton and report it back to the
+I2C master.
 
 ********************************************************************************/
 
@@ -16,6 +16,7 @@ back to the I2C master.
 #include <avr/sleep.h>
 #include <avr/wdt.h>
 
+#include "button.h"
 #include "led.h"
 #include "usiTwiSlave.h"
 
@@ -48,18 +49,20 @@ back to the I2C master.
 //
 // This function gets called from the USI interrupt handler.
 static void onReceive(uint8_t amount) {
-    while(amount--) {
+    while (amount--) {
         // Read next command byte from I2C input buffer
         uint8_t command = usiTwiReceiveByte();
 
         // Execute command
-        if(command & CMD_SET_LED1) {
+        if (command & CMD_SET_LED1) {
             led_state[0] = (command >> 0) & (uint8_t)LED_MASK;
         }
-        if(command & CMD_SET_LED2) {
+        if (command & CMD_SET_LED2) {
             led_state[1] = (command >> 2) & (uint8_t)LED_MASK;
         }
-        // TODO: button
+        if (command & CMD_ACK_BTN) {
+            button_pressed = false;
+        }
     }
     wdt_reset();
 }
@@ -68,16 +71,15 @@ static void onReceive(uint8_t amount) {
 //
 // Status byte structure:
 // Bit 7 6 5 4 3 2 1 0
-//     | | \+/ \+/ \+/
-//     | |  |   |   +--- LED 1 state
-//     | |  |   +------- LED 2 state
-//     | |  +----------- Unused (set to 0)
-//     | +-------------- Button release detected
+//     | \-+-/ \+/ \+/
+//     |   |    |   +--- LED 1 state
+//     |   |    +------- LED 2 state
+//     |   +------------ Unused (set to 0)
 //     +---------------- Button press detected
 //
 // This function gets called from the USI interrupt handler.
 static void onRequest(void) {
-    uint8_t state = /* TODO: button */ (led_state[1] << 2) | (led_state[0] << 0);
+    uint8_t state = (button_pressed ? (1 << 7) : 0) | (led_state[1] << 2) | (led_state[0] << 0);
     usiTwiTransmitByte(state);
     wdt_reset();
 }
@@ -94,12 +96,13 @@ volatile uint8_t timer_ms;
 // Called once at every millisecond.
 ISR(TIM0_COMPA_vect) {
     // LED code only needs to run once in every 1/10th second.
-    if(++timer_ms >= 100) {
+    if (++timer_ms >= 100) {
         timer_ms = 0;
         ledTick();
     }
 
-    // TODO: button
+    // Periodic button sensing and debouncing
+    buttonTick();
 }
 
 // The main function.
@@ -109,12 +112,9 @@ int main(void) {
     // Init all peripherials
     //
 
-    // Init LED control ports PB4 and PB3
+    // Init LED control ports PB4, PB3 and button sense ports PB1
     ledInit();
-
-    // Button sense port PB1 as input with internal pull-up disabled (external pullup provided)
-    DDRB &= ~_BV(PB1);
-    PORTB &= ~_BV(PB1);
+    buttonInit();
 
     // I2C inputs on pins PB2 and PB0
     usiTwiSlaveInit(I2C_ADDR, onReceive, onRequest);

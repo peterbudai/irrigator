@@ -1,3 +1,15 @@
+/********************************************************************************
+
+Firmware main file for user interface control module.
+
+This firmware turns an ATTiny2/4/85 microcontroller into an I2C slave that
+can receive commands to drive a dual-color LED (or any two LEDs). The LED can
+signal various states via the combination of colors and light/blink patterns.
+The module can also read a state of an active-low pushbutton and report it
+back to the I2C master.
+
+********************************************************************************/
+
 #include <stdint.h>
 #include <avr/interrupt.h>
 #include <avr/pgmspace.h>
@@ -20,10 +32,8 @@
 #define CMD_ACK_BTN 0x80
 
 // ------------------------------------------------------------- 
-// Global data
+// Callback functions for I2C communication
 // -------------------------------------------------------------
-
-volatile uint8_t timer_ms;
 
 // Handle I2C data sent from master. Accepts a single command byte.
 //
@@ -35,6 +45,8 @@ volatile uint8_t timer_ms;
 //     | |  +----------- LED select bits
 //     | +-------------- Unused (ignored, should be 0)
 //     +---------------- Reset button status (1: reset, 0: keep)
+//
+// This function gets called from the USI interrupt handler.
 static void onReceive(uint8_t amount) {
     while(amount--) {
         // Read next command byte from I2C input buffer
@@ -62,52 +74,77 @@ static void onReceive(uint8_t amount) {
 //     | |  +----------- Unused (set to 0)
 //     | +-------------- Button release detected
 //     +---------------- Button press detected
+//
+// This function gets called from the USI interrupt handler.
 static void onRequest(void) {
     uint8_t state = /* TODO: button */ (led_state[1] << 2) | (led_state[0] << 0);
     usiTwiTransmitByte(state);
     wdt_reset();
 }
 
-// Handle timer tick at every millisecond
-//
+// -------------------------------------------------------------
+// Initialization and main event loop
+// -------------------------------------------------------------
+
+// Counter for elapsed milliseconds.
+// Increased by one via a timer interrupt once every millisecond.
+volatile uint8_t timer_ms;
+
+// Handle timer tick interrupt.
+// Called once at every millisecond.
 ISR(TIM0_COMPA_vect) {
+    // LED code only needs to run once in every 1/10th second.
     if(++timer_ms >= 100) {
         timer_ms = 0;
         ledTick();
     }
+
+    // TODO: button
 }
 
-// Main function
+// The main function.
+// This is called upon a reset condition and never returns.
 int main(void) {
-    // -------------------------------------------------------------
+    //
     // Init all peripherials
-    // -------------------------------------------------------------
+    //
 
     // Init LED control ports PB4 and PB3
     ledInit();
-
-    // I2C inputs on pins PB2 and PB0
-    usiTwiSlaveInit(I2C_ADDR, onReceive, onRequest);
 
     // Button sense port PB1 as input with internal pull-up disabled (external pullup provided)
     DDRB &= ~_BV(PB1);
     PORTB &= ~_BV(PB1);
 
-    // -------------------------------------------------------------
-    // Init timer
-    // -------------------------------------------------------------
+    // I2C inputs on pins PB2 and PB0
+    usiTwiSlaveInit(I2C_ADDR, onReceive, onRequest);
 
-    // -------------------------------------------------------------
+    //
+    // Init timer
+    //
+
+    // Start at 0
+    TCNT0 = 0;
+    // 1000 Hz (8000000/((124+1)*64))
+    OCR0A = 124;
+    // CTC
+    TCCR0A = (1 << WGM01);
+    // Prescaler 64
+    TCCR0B = (1 << CS01) | (1 << CS00);
+    // Output Compare Match A Interrupt Enable
+    TIMSK = (1 << OCIE0A);
+
+    //
     // Main loop - wait for external events and handle them
-    // -------------------------------------------------------------
+    //
     
     // Enable sleep and interrupts
     set_sleep_mode(SLEEP_MODE_IDLE);
     sleep_enable();
     sei();
 
-    // Reset if no I2C command received for 8 seconds
-    // Safety measure: if I2C master or bus hangs, better reinit
+    // Reset if no I2C communication occured for 8 seconds
+    // Safety measure: if I2C master or bus hangs, better reinit to a known state
     wdt_enable(WDTO_8S);
     for (;;) {
         sleep_cpu();

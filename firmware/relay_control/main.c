@@ -46,7 +46,7 @@ using active-high digital signals.
 //        |     +------- Unused (ignored, should be 0)
 //        +------------- Command
 //
-// This function gets called from a the USI interrupt handler.
+// This function gets called from the USI interrupt handler.
 static void onReceive(uint8_t amount) {
     while(amount--) {
         // Read next command byte from I2C input buffer
@@ -83,7 +83,7 @@ static void onReceive(uint8_t amount) {
 //          |      +---- Relay 2 state (on: 1, off: 0)
 //          +----------- Unused (set to 0)
 //
-// This function gets called from a the USI interrupt handler.
+// This function gets called from the USI interrupt handler.
 static void onRequest(void) {
     uint8_t state = (PORTB & (_BV(RELAY_2) | _BV(RELAY_1))) >> RELAY_1;
     usiTwiTransmitByte(state);

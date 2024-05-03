@@ -1,3 +1,13 @@
+/********************************************************************************
+
+Firmware main file for relay control module.
+
+This firmware turns an ATTiny2/4/85 microcontroller into an I2C slave that
+can receive commands to control two independent relays via two GPIO pins,
+using active-high digital signals.
+
+********************************************************************************/
+
 #include <stdint.h>
 #include <avr/interrupt.h>
 #include <avr/sleep.h>
@@ -22,6 +32,10 @@
 #define RELAY_1 PB3             // Relay 1 is connected to PORTB3
 #define RELAY_2 PB4             // Relay 2 is connected to PORTB4
 
+// ------------------------------------------------------------- 
+// Callback functions for I2C communication
+// -------------------------------------------------------------
+
 // Handle I2C data sent from master. Accepts a single command byte.
 //
 // Command byte structure:
@@ -31,6 +45,8 @@
 //        |     |  +---- Relay 2 select/state
 //        |     +------- Unused (ignored, should be 0)
 //        +------------- Command
+//
+// This function gets called from a the USI interrupt handler.
 static void onReceive(uint8_t amount) {
     while(amount--) {
         // Read next command byte from I2C input buffer
@@ -66,17 +82,24 @@ static void onReceive(uint8_t amount) {
 //          |      | +-- Relay 1 state (on: 1, off: 0)
 //          |      +---- Relay 2 state (on: 1, off: 0)
 //          +----------- Unused (set to 0)
+//
+// This function gets called from a the USI interrupt handler.
 static void onRequest(void) {
     uint8_t state = (PORTB & (_BV(RELAY_2) | _BV(RELAY_1))) >> RELAY_1;
     usiTwiTransmitByte(state);
     wdt_reset();
 }
 
-// Main function
+// -------------------------------------------------------------
+// Initialization and main event loop
+// -------------------------------------------------------------
+
+// The one and only main function.
+// This is called upon a reset condition and never returns.
 int main(void) {
-    // -------------------------------------------------------------
+    //
     // Init all peripherials
-    // -------------------------------------------------------------
+    //
 
     // Relay control ports PB3 and PB4 as outputs (initially LOW)
     DDRB |= _BV(RELAY_2) | _BV(RELAY_1);
@@ -89,16 +112,16 @@ int main(void) {
     DDRB &= ~_BV(PB1);
     PORTB |= _BV(PB1);
 
-    // -------------------------------------------------------------
+    //
     // Main loop - wait for external events and handle them
-    // -------------------------------------------------------------
+    //
     
     // Enable sleep and interrupts
     set_sleep_mode(SLEEP_MODE_IDLE);
     sleep_enable();
     sei();
 
-    // Reset if no I2C command received for 8 seconds
+    // Reset if no I2C communication occured for 8 seconds
     // Safety measure: if I2C master or bus hangs, better turn off relays and reinit
     wdt_enable(WDTO_8S);
     for (;;) {

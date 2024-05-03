@@ -1,8 +1,8 @@
 MCU = attiny45
 FREQ = 8000000
-OPT = s
+OPT = 2
 USB_PORT ?= 0
-CONFIG ?= MEASURE
+CONFIG ?= 
 
 SRC_DIR = .
 TARGET = relay_control
@@ -10,7 +10,7 @@ TARGET_DIR = ../out/$(TARGET)
 FORMAT = ihex
 
 CDEFS += -DF_CPU=$(FREQ) $(patsubst %,-DCONFIG_%,$(CONFIG))
-CFLAGS = -std=gnu99 -funsigned-char -funsigned-bitfields -fpack-struct -fshort-enums -fno-stack-protector -fdata-sections -ffunction-sections -Wall -Wextra -Wstrict-prototypes -g -O$(OPT) -Wa,-adhlns=$(addprefix $(TARGET_DIR)/,$(notdir $(<:.c=.lst)))
+CFLAGS = -std=gnu99 -funsigned-char -funsigned-bitfields -fpack-struct -fshort-enums -fno-stack-protector -fdata-sections -ffunction-sections --param=min-pagesize=0 -Wall -Wextra -Wstrict-prototypes -g -O$(OPT) -Wa,-adhlns=$(addprefix $(TARGET_DIR)/,$(notdir $(<:.c=.lst)))
 LDFLAGS = -Wl,-Map=$(TARGET_DIR)/$(TARGET).map,--cref,--gc-sections -lm
 
 AVRDUDE_PROGRAMMER = avrisp

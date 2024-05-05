@@ -54,7 +54,8 @@ void buttonTick(void) {
 
     // Detect change from last known stable state
     if (sense == button_state) {
-        // Reset debounce timer if no change, or we returned (bounced) to the stable state.
+        // Reset debounce timer if there's no change, or
+        // we returned (bounced back) to the stable state.
         button_timer = 0;
         return;
     }
@@ -66,8 +67,10 @@ void buttonTick(void) {
 
     // Valid change detected, switch to the new stable state
     button_state = sense;
+    button_timer = 0;
+
+    // If button press event detected, save it
     if (button_state == BUTTON_PRESSED) {
-        // If button press event detected, save it
         button_pressed = true;
     }
 }

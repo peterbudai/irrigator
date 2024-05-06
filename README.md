@@ -1,5 +1,5 @@
-# IrriGator
+<img src="irrigator_logo.png" width="100">
 
-<img src="irrogator_logo.png" width="200">
+# IrriGator
 
 WiFi enabled irrigation control 

@@ -36,21 +36,24 @@ using active-high digital signals.
 // Callback functions for I2C communication
 // -------------------------------------------------------------
 
-// Handle I2C data sent from master. Accepts a single command byte.
-//
-// Command byte structure:
-// Bit 7 6 5 4 3 2 1 0
-//     \--+--/ \+/ | |
-//        |     |  | +-- Relay 1 select/state
-//        |     |  +---- Relay 2 select/state
-//        |     +------- Unused (ignored, should be 0)
-//        +------------- Command
-//
-// This function gets called from the USI interrupt handler.
-static void onReceive(uint8_t amount) {
-    while(amount--) {
+// Handle I2C requests from master.
+// This runs outside of interrupts
+void usi_twi_data_callback(uint8_t input_buffer_length, const uint8_t *input_buffer,
+						   uint8_t *output_buffer_length, uint8_t *output_buffer) 
+{
+    // Handle I2C data sent from master. Accepts a single command byte.
+    //
+    // Command byte structure:
+    // Bit 7 6 5 4 3 2 1 0
+    //     \--+--/ \+/ | |
+    //        |     |  | +-- Relay 1 select/state
+    //        |     |  +---- Relay 2 select/state
+    //        |     +------- Unused (ignored, should be 0)
+    //        +------------- Command
+
+    for(uint8_t idx = 0; idx < input_buffer_length; ++idx) {
         // Read next command byte from I2C input buffer
-        uint8_t command = usiTwiReceiveByte();
+        uint8_t command = input_buffer[idx];
 
         // Execute command
         switch(command & CMD_MASK) {
@@ -71,22 +74,21 @@ static void onReceive(uint8_t amount) {
                 break;
         }
     }
-    wdt_reset();
-}
 
-// Handle I2C data read by master. Returns relay status in a single byte.
-//
-// Status byte structure:
-// Bit 7 6 5 4 3 2 1 0
-//     \----+----/ | |
-//          |      | +-- Relay 1 state (on: 1, off: 0)
-//          |      +---- Relay 2 state (on: 1, off: 0)
-//          +----------- Unused (set to 0)
-//
-// This function gets called from the USI interrupt handler.
-static void onRequest(void) {
-    uint8_t state = (PORTB & (_BV(RELAY_2) | _BV(RELAY_1))) >> RELAY_1;
-    usiTwiTransmitByte(state);
+    // Prepare for I2C data read by master. Returns relay status in a single byte.
+    //
+    // Status byte structure:
+    // Bit 7 6 5 4 3 2 1 0
+    //     \----+----/ | |
+    //          |      | +-- Relay 1 state (on: 1, off: 0)
+    //          |      +---- Relay 2 state (on: 1, off: 0)
+    //          +----------- Unused (set to 0)
+    //
+
+    output_buffer[0] = (PORTB & (_BV(RELAY_2) | _BV(RELAY_1))) >> RELAY_1;
+    *output_buffer_length = 1;
+
+    // Reset watchdog timer as we had a successful communication
     wdt_reset();
 }
 
@@ -105,26 +107,19 @@ int main(void) {
     DDRB |= _BV(RELAY_2) | _BV(RELAY_1);
     PORTB &= ~(_BV(RELAY_2) | _BV(RELAY_1));
 
-    // I2C inputs on pins PB2 and PB0
-    usiTwiSlaveInit(I2C_ADDR, onReceive, onRequest);
-
     // Unused pin PB1 as input with internal pull-up enabled
     DDRB &= ~_BV(PB1);
     PORTB |= _BV(PB1);
 
-    //
-    // Main loop - wait for external events and handle them
-    //
-    
-    // Enable sleep and interrupts
-    set_sleep_mode(SLEEP_MODE_IDLE);
-    sleep_enable();
-    sei();
-
     // Reset if no I2C communication occured for 8 seconds
     // Safety measure: if I2C master or bus hangs, better turn off relays and reinit
     wdt_enable(WDTO_8S);
-    for (;;) {
-        sleep_cpu();
-    }
+    
+    //
+    // Main loop - wait for external events and handle them
+    //
+
+    // I2C inputs on pins PB2 and PB0
+    // This will enable sleep and interrupts internally, and runs in a loop
+    usi_twi_slave(I2C_ADDR, true, usi_data_callback, NULL);
 }

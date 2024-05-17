@@ -103,7 +103,7 @@ public:
   bool checkButton() {
     uint8_t state = 0;
     if(i2c.read(&state, 1)) {
-      Serial.printf("[0x%02x]");
+      Serial.printf("[0x%02x]", state);
     } else {
       Serial.print("[FAIL]");
     }
@@ -230,7 +230,9 @@ BLYNK_DISCONNECTED() {
 // Periodically check connection state
 void checkConnection() {
   // Update user interface status LED
-  User.setConnectionState((WiFi.status() == WL_CONNECTED) && Blynk.connected());
+  if(User.checkButton()) {
+    User.setConnectionState((WiFi.status() == WL_CONNECTED) && Blynk.connected());
+  }
 }
 
 void measureTemperature() {
@@ -256,7 +258,7 @@ void setup() {
     Serial.println("[ OK ] WiFi init");
   }
 
-  //Timer.setInterval(1000L, checkConnection);
+  Timer.setInterval(1000L, checkConnection);
   Timer.setInterval(60000L, measureTemperature);
   Blynk.config(auth);
   Serial.println("[ OK ] Cloud init");

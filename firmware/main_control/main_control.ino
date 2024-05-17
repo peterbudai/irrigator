@@ -13,17 +13,20 @@
 #include <Adafruit_I2CDevice.h>
 #include <RTClib.h>
 
+#define BOOL2STR(b, s) ((b) ? (s) : "FAIL")
+#define BOOL2OK(b) BOOL2STR(b, " OK ")
+
 const char ssid[] = BLYNK_WIFI_SSID;
 const char pass[] = BLYNK_WIFI_PASS;
 const char auth[] = BLYNK_AUTH_TOKEN;
 
-#define RELAY_1 0x01
-#define RELAY_2 0x02
-#define RELAY_OFF 0x10
-#define RELAY_ON 0x20
-
 class RelayController {
 private:
+  static const uint8_t RELAY_1 = 0x01;
+  static const uint8_t RELAY_2 = 0x02;
+  static const uint8_t RELAY_OFF = 0x10;
+  static const uint8_t RELAY_ON = 0x20;
+
   Adafruit_I2CDevice i2c;
 
 public:
@@ -32,57 +35,38 @@ public:
   }
 
   void begin() {
-    if(i2c.begin()) {
-      Serial.print("[ OK ]");
-    } else {
-      Serial.print("[FAIL]");
-    }
-    Serial.println(" Relay controller init");
+    bool ok = i2c.begin();
+    Serial.printf("[%s] Relay controller init\n", BOOL2OK(ok));
   }
 
   void setState(bool on) {
     uint8_t cmd = (on ? RELAY_ON : RELAY_OFF) | RELAY_1 | RELAY_2;
-    if(i2c.write(&cmd, 1)) {
-      Serial.printf("[0x%02x]", cmd);
-    } else {
-      Serial.print("[FAIL]");
-    }
-      Serial.println(" Relay control");
-  }
-
-  void logState() {
     uint8_t state = 0;
-    if(i2c.read(&state, 1)) {
-      Serial.printf("[0x%02x]", state);
-    } else {
-      Serial.print("[FAIL]");
-    }
-    Serial.println(" Relay status");
+    bool ok = i2c.write_then_read(&cmd, 1, &state, 1);
+    Serial.printf("[%s] Relay change 0x%02x -> 0x%02x\n", BOOL2OK(ok), cmd, state);
   }
 };
 
-#define USER_LED_OFF 0x00
-#define USER_LED1_BLIP 0x01
-#define USER_LED1_BLINK 0x02
-#define USER_LED1_ON 0x03
-#define USER_LED2_BLIP 0x04
-#define USER_LED2_BLINK 0x08
-#define USER_LED2_ON 0x0C
-#define USER_SET_LED1 0x10
-#define USER_SET_LED2 0x20
-#define USER_ACK_BTN 0x80
 
 class UserController {
 private:
+  static const uint8_t USER_LED_OFF = 0x00;
+  static const uint8_t USER_LED1_BLIP = 0x01;
+  static const uint8_t USER_LED1_BLINK = 0x02;
+  static const uint8_t USER_LED1_ON = 0x03;
+  static const uint8_t USER_LED2_BLIP = 0x04;
+  static const uint8_t USER_LED2_BLINK = 0x08;
+  static const uint8_t USER_LED2_ON = 0x0C;
+  static const uint8_t USER_SET_LED1 = 0x10;
+  static const uint8_t USER_SET_LED2 = 0x20;
+  static const uint8_t USER_ACK_BTN = 0x80;
+
   Adafruit_I2CDevice i2c;
 
-  void setState(uint8_t state) {
-    if(i2c.write(&state, 1)) {
-      Serial.printf("[0x%02x]", state);
-    } else {
-      Serial.print("[FAIL]");
-    }
-    Serial.println(" User control");
+  void setState(uint8_t cmd) {
+    uint8_t state = 0;
+    bool ok = i2c.write_then_read(&cmd, 1, &state, 1);
+    Serial.printf("[%s] User interface change: 0x%02x -> 0x%02x\n", BOOL2OK(ok), cmd, state);
   }
 
 public:
@@ -91,24 +75,21 @@ public:
   }
 
   void begin() {
-    if(i2c.begin()) {
-      Serial.print("[ OK ]");
-    } else {
-      Serial.print("[FAIL]");
-    }
-    Serial.println(" User controller init");
+    bool ok = i2c.begin();
+    Serial.printf("[%s] User controller init\n", BOOL2OK(ok));
     this->setState(USER_ACK_BTN | USER_SET_LED1 | USER_SET_LED2 | USER_LED1_ON);
   }
 
   bool checkButton() {
     uint8_t state = 0;
-    if(i2c.read(&state, 1)) {
-      Serial.printf("[0x%02x]", state);
-    } else {
-      Serial.print("[FAIL]");
+    bool ok = i2c.read(&state, 1);
+    Serial.printf("[%s] User interface status: 0x%02x\f", BOOL2STR(ok, " IN "), state);
+
+    bool pressed = (state & USER_ACK_BTN) != 0;
+    if(pressed) {
+      this->setState(USER_ACK_BTN);
     }
-    Serial.println(" User status");
-    return (state & USER_ACK_BTN) != 0;
+    return pressed;
   }
 
   void setConnectionState(bool connected) {
@@ -134,7 +115,8 @@ public:
   }
 
   void begin() {
-    Serial.printf("[%s] Clock init\n", rtc.begin() ? " OK " : "FAIL");
+    bool ok = rtc.begin();
+    Serial.printf("[%s] Clock init\n", BOOL2OK(ok));
   }
 
   void setTime(const DateTime& dt) {
@@ -158,7 +140,7 @@ public:
         success = rtc.setAlarm2(time, Ds3231Alarm2Mode::DS3231_A2_Hour);
       }
       alarmValid[alarm - 1] = true;
-      Serial.printf("[%s] Alarm %d set\n", success ? " OK " : "FAIL", alarm);
+      Serial.printf("[%s] Alarm %d set\n", BOOL2OK(success), alarm);
     } else {
       rtc.disableAlarm(alarm);
       alarmValid[alarm - 1] = false;
@@ -209,7 +191,7 @@ BLYNK_WRITE(VirtualPinTimeOff) {
 
 // Handle successful connection to cloud server
 BLYNK_CONNECTED() {
-  Serial.println("[ OK ] Cloud connected");
+  Serial.println("[INFO] Cloud connected");
 
   // Request up-to-date settings from cloud
   Blynk.syncAll();                      // Schedule settings
@@ -221,7 +203,7 @@ BLYNK_CONNECTED() {
 
 // Handle successful connection to cloud server
 BLYNK_DISCONNECTED() {
-  Serial.println("[FAIL] Cloud disconnected");
+  Serial.println("[INFO] Cloud disconnected");
 
   // Update user interface status LED
   User.setConnectionState(false);
@@ -230,9 +212,8 @@ BLYNK_DISCONNECTED() {
 // Periodically check connection state
 void checkConnection() {
   // Update user interface status LED
-  if(User.checkButton()) {
-    User.setConnectionState((WiFi.status() == WL_CONNECTED) && Blynk.connected());
-  }
+  // User.setConnectionState((WiFi.status() == WL_CONNECTED) && Blynk.connected());
+  User.checkButton();
 }
 
 void measureTemperature() {
@@ -252,16 +233,13 @@ void setup() {
   Relay.begin();
   Clock.begin();
 
-  if(WiFi.begin(ssid, pass) == WL_CONNECT_FAILED) {
-    Serial.println("[FAIL] WiFi init");
-  } else {
-    Serial.println("[ OK ] WiFi init");
-  }
+  wl_status_t wstatus = WiFi.begin(ssid, pass);
+  Serial.printf("[%s] WiFi init", BOOL2OK(wstatus != WL_CONNECT_FAILED));
 
   Timer.setInterval(1000L, checkConnection);
   Timer.setInterval(60000L, measureTemperature);
   Blynk.config(auth);
-  Serial.println("[ OK ] Cloud init");
+  Serial.println("[ OK ] Blynk init");
 
   delay(1000);
   User.setConnectionState(false);

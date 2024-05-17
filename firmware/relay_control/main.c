@@ -8,12 +8,13 @@ using active-high digital signals.
 
 ********************************************************************************/
 
+#include <stddef.h>
 #include <stdint.h>
 #include <avr/interrupt.h>
 #include <avr/sleep.h>
 #include <avr/wdt.h>
 
-#include "usiTwiSlave.h"
+#include "usi_twi_slave.h"
 
 // ------------------------------------------------------------- 
 // Constants
@@ -121,5 +122,5 @@ int main(void) {
 
     // I2C inputs on pins PB2 and PB0
     // This will enable sleep and interrupts internally, and runs in a loop
-    usi_twi_slave(I2C_ADDR, true, usi_data_callback, NULL);
+    usi_twi_slave(I2C_ADDR, true, usi_twi_data_callback, NULL);
 }

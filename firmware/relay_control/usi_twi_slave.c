@@ -4,7 +4,7 @@
 #include <avr/interrupt.h>
 #include <avr/sleep.h>
 
-#include "usitwislave.h"
+#include "usi_twi_slave.h"
 
 #if	defined(__AVR_ATtiny2313__)
 #	define DDR_USI				DDRB
@@ -108,7 +108,7 @@
 #	define USI_OVERFLOW_VECTOR	USI_OVERFLOW_vect
 #endif
 
-enum
+typedef enum
 {
 	OF_STATE_CHECK_ADDRESS,
 	OF_STATE_SEND_DATA,
@@ -118,7 +118,7 @@ enum
 	OF_STATE_STORE_DATA_AND_SEND_ACK
 } overflow_state_t;
 
-enum
+typedef enum
 {
 	SS_STATE_BEFORE_START,
 	SS_STATE_AFTER_START,
@@ -127,12 +127,11 @@ enum
 	SS_STATE_DATA_PROCESSED
 } startstop_state_t;
 
-static void (*idle_callback)(void);
-static void	(*data_callback)(uint8_t input_buffer_length, const uint8_t *input_buffer,
-						uint8_t *output_buffer_length, uint8_t *output_buffer);
+static usi_twi_idle_callback_t idle_callback;
+static usi_twi_data_callback_t data_callback;
 
-static uint8_t of_state;
-static uint8_t ss_state;
+static overflow_state_t of_state;
+static startstop_state_t ss_state;
 
 static uint8_t	slave_address;
 
@@ -502,6 +501,9 @@ void usi_twi_slave(uint8_t slave_address_in, bool use_sleep,
 
 					break;
 				}
+
+				default:
+					break;
 			}
 
 			ss_state = SS_STATE_BEFORE_START;

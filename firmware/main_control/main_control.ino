@@ -1,7 +1,6 @@
 
 #define BLYNK_FIRMWARE_VERSION "0.1.0"
 #define BLYNK_NO_FANCY_LOGO
-// #define BLYNK_DEBUG
 #define BLYNK_PRINT Serial
 
 #include "secrets.h"      // Must be first, before any Blynk-related includes
@@ -16,9 +15,12 @@
 #define BOOL2STR(b, s) ((b) ? (s) : "FAIL")
 #define BOOL2OK(b) BOOL2STR(b, " OK ")
 
-const char ssid[] = BLYNK_WIFI_SSID;
-const char pass[] = BLYNK_WIFI_PASS;
-const char auth[] = BLYNK_AUTH_TOKEN;
+enum IrrigationState {
+  NO_SCHEDULE = 0,
+  SCHEDULED_OFF = 1,
+  SCHEDULED_ON = 2,
+  MANUAL_ON = 3,
+};
 
 class RelayController {
 private:
@@ -39,14 +41,19 @@ public:
     Serial.printf("[%s] Relay controller init\n", BOOL2OK(ok));
   }
 
-  void setState(bool on) {
-    uint8_t cmd = (on ? RELAY_ON : RELAY_OFF) | RELAY_1 | RELAY_2;
+  void ensureState(bool on) {
     uint8_t state = 0;
-    bool ok = i2c.write_then_read(&cmd, 1, &state, 1);
-    Serial.printf("[%s] Relay change 0x%02x -> 0x%02x\n", BOOL2OK(ok), cmd, state);
+    bool ok = i2c.read(&state, 1);
+    Serial.printf("[%s] Relay state 0x%02x\n", BOOL2STR(ok, " IN "), state);
+
+    uint8_t shouldBe = on ? (RELAY_1 | RELAY_2) : 0;
+    if(state != shouldBe) {
+      uint8_t cmd = (on ? RELAY_ON : RELAY_OFF) | RELAY_1 | RELAY_2;
+      ok = i2c.write_then_read(&cmd, 1, &state, 1);
+      Serial.printf("[%s] Relay change 0x%02x -> 0x%02x\n", BOOL2OK(ok), cmd, state);
+    }
   }
 };
-
 
 class UserController {
 private:
@@ -77,33 +84,50 @@ public:
   void begin() {
     bool ok = i2c.begin();
     Serial.printf("[%s] User controller init\n", BOOL2OK(ok));
-    this->setState(USER_ACK_BTN | USER_SET_LED1 | USER_SET_LED2 | USER_LED1_ON);
+    setState(USER_ACK_BTN | USER_SET_LED1 | USER_SET_LED2 | USER_LED1_ON);
   }
 
   bool checkButton() {
     uint8_t state = 0;
     bool ok = i2c.read(&state, 1);
-    Serial.printf("[%s] User interface status: 0x%02x\f", BOOL2STR(ok, " IN "), state);
+    Serial.printf("[%s] User interface status: 0x%02x\n", BOOL2STR(ok, " IN "), state);
 
     bool pressed = (state & USER_ACK_BTN) != 0;
     if(pressed) {
-      this->setState(USER_ACK_BTN);
+      setState(USER_ACK_BTN);
     }
     return pressed;
   }
 
   void setConnectionState(bool connected) {
     if(connected) {
-      this->setState(USER_SET_LED1 | USER_LED1_BLIP);
+      setState(USER_SET_LED1 | USER_LED1_BLIP);
     } else {
-      this->setState(USER_SET_LED1 | USER_LED1_BLINK);
+      setState(USER_SET_LED1 | USER_LED1_BLINK);
+    }
+  }
+
+  void setIrrigationState(IrrigationState state) {
+    switch(state) {
+      case NO_SCHEDULE:
+        setState(USER_SET_LED2 | USER_LED_OFF);
+        break;
+      case SCHEDULED_OFF:
+        setState(USER_SET_LED2 | USER_LED2_BLIP);
+        break;
+      case SCHEDULED_ON:
+        setState(USER_SET_LED2 | USER_LED2_BLINK);
+        break;
+      case MANUAL_ON:
+        setState(USER_SET_LED2 | USER_LED2_ON);
+        break;
     }
   }
 };
 
 class ClockController {
 private:
-  bool enabled;
+  bool scheduleEnabled;
   bool timeValid;
   bool alarmValid[2];
 
@@ -111,7 +135,7 @@ private:
 
 public:
   ClockController()
-    : enabled(false), timeValid(false), alarmValid({false, false}) {
+    : scheduleEnabled(false), timeValid(false), alarmValid {false, false} {
   }
 
   void begin() {
@@ -146,6 +170,41 @@ public:
       alarmValid[alarm - 1] = false;
       Serial.printf("[ OK ] Alarm %d disable\n", alarm);
     }
+    rtc.clearAlarm(alarm);
+  }
+
+  void setScheduleEnabled(bool enabled) {
+    scheduleEnabled = enabled;
+    if(!enabled) {
+      rtc.clearAlarm(1);      
+      rtc.clearAlarm(2);      
+    }
+  }
+
+  bool hasSchedule() {
+    return timeValid && alarmValid[0] && alarmValid[1] && scheduleEnabled; 
+  }
+
+  uint8_t checkAlarm() {
+    if(rtc.lostPower()) {
+      Serial.printf("[FAIL] Time settings lost\n");
+      timeValid = false;
+    }
+
+    if(!hasSchedule()) {
+      Serial.println("[INFO] No valid schedule");
+      return 0;
+    }
+    
+    uint8_t alarm = 0;
+    for(uint8_t i = 1; i <= 2; ++i) {
+      if(rtc.alarmFired(i)) {
+        Serial.printf("[ IN ] Alarm %d fired\n", i);
+        alarm += i;
+        rtc.clearAlarm(i);
+      }
+    }
+    return (alarm > 2) ? 0 : alarm;
   }
 
   float getTemperature() {
@@ -157,14 +216,49 @@ public:
 
 #define VirtualPinTimeOn V0
 #define VirtualPinTimeOff V1
-#define VirtualPinPinSchedule V2
+#define VirtualPinSchedule V2
 #define VirtualPinStatus V3
 #define VirtualPinTemperature V4
+
+const char ssid[] = BLYNK_WIFI_SSID;
+const char pass[] = BLYNK_WIFI_PASS;
+const char auth[] = BLYNK_AUTH_TOKEN;
 
 RelayController Relay;
 UserController User;
 ClockController Clock;
 BlynkTimer Timer;
+IrrigationState State;
+
+void sendIrrigationState() {
+  int data = isIrrigationOn() ? 1 : 0;
+  Blynk.virtualWrite(VirtualPinStatus, data);
+  Serial.printf("[SEND] Irrigation status: %d\n", data);
+}
+
+bool isIrrigationOn() {
+  switch(State) {
+    case SCHEDULED_ON:
+    case MANUAL_ON:
+      return true;
+    case NO_SCHEDULE:
+    case SCHEDULED_OFF:
+    default:
+      return false;
+  }
+}
+
+void changeIrrigationState(IrrigationState next, bool defer = false) {
+  Serial.printf("[INFO] Irrigation status: %d\n", next);
+  State = next;
+  User.setIrrigationState(next);
+  Relay.ensureState(isIrrigationOn());
+  if(defer) {
+    Timer.setTimeout(100, sendIrrigationState);
+  } else {
+    sendIrrigationState();
+  }
+}
 
 // Handle receiving fresh real-time clock value from cloud
 BLYNK_WRITE(InternalPinRTC) {
@@ -189,6 +283,25 @@ BLYNK_WRITE(VirtualPinTimeOff) {
   Clock.setAlarm(2, input);
 }
 
+// Handle receiving schedule enablement status from cloud 
+BLYNK_WRITE(VirtualPinSchedule) {
+  Serial.printf("[RECV] Schedule enabled: %d\n", param.asInt());  
+  Clock.setScheduleEnabled(param.asInt() != 0);
+}
+
+// Handle receiving manual status override from cloud 
+BLYNK_WRITE(VirtualPinStatus) {
+  Serial.printf("[RECV] Status change: %d\n", param.asInt());
+  
+  bool shouldBeOn = (param.asInt() != 0);
+  if(isIrrigationOn() && !shouldBeOn) {
+    changeIrrigationState(Clock.hasSchedule() ? SCHEDULED_OFF : NO_SCHEDULE, true);
+  }
+  if(!isIrrigationOn() && shouldBeOn) {
+    changeIrrigationState(MANUAL_ON, true);
+  }
+}
+
 // Handle successful connection to cloud server
 BLYNK_CONNECTED() {
   Serial.println("[INFO] Cloud connected");
@@ -196,6 +309,7 @@ BLYNK_CONNECTED() {
   // Request up-to-date settings from cloud
   Blynk.syncAll();                      // Schedule settings
   Blynk.sendInternal("rtc", "sync");    // Current time
+  sendIrrigationState();
 
   // Update user interface status LED
   User.setConnectionState(true);
@@ -209,21 +323,67 @@ BLYNK_DISCONNECTED() {
   User.setConnectionState(false);
 }
 
-// Periodically check connection state
-void checkConnection() {
-  // Update user interface status LED
-  // User.setConnectionState((WiFi.status() == WL_CONNECTED) && Blynk.connected());
-  User.checkButton();
+// Update user interface status LED
+void showConnection() {
+  User.setConnectionState((WiFi.status() == WL_CONNECTED) && Blynk.connected());
 }
 
+// Periodically log outside temperature
 void measureTemperature() {
   Blynk.virtualWrite(VirtualPinTemperature, Clock.getTemperature()), 
   Serial.println("[SEND] Temperature");
 }
 
+void checkSchedule() {
+  bool update = false;
+  switch(State) {
+    case NO_SCHEDULE:
+      if(Clock.hasSchedule()) {
+        changeIrrigationState(SCHEDULED_OFF);
+        update = true;
+      }
+      break;
+    case SCHEDULED_OFF:
+      if(Clock.checkAlarm() == 1) {
+        changeIrrigationState(SCHEDULED_ON);
+        update = true;
+        break;
+      }
+      if(!Clock.hasSchedule()) {
+        changeIrrigationState(NO_SCHEDULE);
+        update = true;
+      }
+      break;
+    case SCHEDULED_ON:
+    case MANUAL_ON:
+      if(Clock.checkAlarm() == 2) {
+        changeIrrigationState(SCHEDULED_OFF);
+        update = true;
+      }
+      break;
+  }
+
+  if(!update) {
+    sendIrrigationState();
+  }
+}
+
+void checkPeripherals() {
+  if(User.checkButton()) {
+    if(isIrrigationOn()) {
+      changeIrrigationState(Clock.hasSchedule() ? SCHEDULED_OFF : NO_SCHEDULE);
+    } else {
+      changeIrrigationState(MANUAL_ON);
+    }
+  } else {
+    Relay.ensureState(isIrrigationOn());
+  }
+}
+
 void setup() {
   Serial.begin(9600);
   Serial.println("IrriGator");
+  State = NO_SCHEDULE;
  
   // SDA on GPIO0, SCL on GPIO2
   Wire.begin(0, 2);
@@ -234,15 +394,14 @@ void setup() {
   Clock.begin();
 
   wl_status_t wstatus = WiFi.begin(ssid, pass);
-  Serial.printf("[%s] WiFi init", BOOL2OK(wstatus != WL_CONNECT_FAILED));
+  Serial.printf("[%s] WiFi init\n", BOOL2OK(wstatus != WL_CONNECT_FAILED));
 
-  Timer.setInterval(1000L, checkConnection);
+  Timer.setTimeout(1000L, showConnection);
   Timer.setInterval(60000L, measureTemperature);
+  Timer.setInterval(45000L, checkSchedule);
+  Timer.setInterval(1000L, checkPeripherals);
   Blynk.config(auth);
   Serial.println("[ OK ] Blynk init");
-
-  delay(1000);
-  User.setConnectionState(false);
 }
 
 void loop() {

@@ -223,6 +223,7 @@ public:
 const char ssid[] = BLYNK_WIFI_SSID;
 const char pass[] = BLYNK_WIFI_PASS;
 const char auth[] = BLYNK_AUTH_TOKEN;
+const char host[] = BLYNK_TEMPLATE_NAME;
 
 RelayController Relay;
 UserController User;
@@ -287,6 +288,9 @@ BLYNK_WRITE(VirtualPinTimeOff) {
 BLYNK_WRITE(VirtualPinSchedule) {
   Serial.printf("[RECV] Schedule enabled: %d\n", param.asInt());  
   Clock.setScheduleEnabled(param.asInt() != 0);
+  if(!isIrrigationOn()) {
+    changeIrrigationState(Clock.hasSchedule() ? SCHEDULED_OFF : NO_SCHEDULE, true);
+  }
 }
 
 // Handle receiving manual status override from cloud 
@@ -381,9 +385,10 @@ void checkPeripherals() {
 }
 
 void setup() {
-  Serial.begin(9600);
-  Serial.println("IrriGator");
   State = NO_SCHEDULE;
+
+  Serial.begin(115200);
+  Serial.println("[    ] IrriGator");
  
   // SDA on GPIO0, SCL on GPIO2
   Wire.begin(0, 2);
@@ -393,8 +398,10 @@ void setup() {
   Relay.begin();
   Clock.begin();
 
-  wl_status_t wstatus = WiFi.begin(ssid, pass);
-  Serial.printf("[%s] WiFi init\n", BOOL2OK(wstatus != WL_CONNECT_FAILED));
+  bool ok = WiFi.setHostname(host);
+  ok = ok && WiFi.mode(WIFI_STA);
+  ok = ok && (WiFi.begin(ssid, pass) != WL_CONNECT_FAILED);
+  Serial.printf("[%s] WiFi init (%s)\n", BOOL2OK(ok), ssid);
 
   Timer.setTimeout(1000L, showConnection);
   Timer.setInterval(60000L, measureTemperature);

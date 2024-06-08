@@ -6,9 +6,7 @@
 #include "secrets.h"      // Must be first, before any Blynk-related includes
 
 #include <Wire.h>
-#include <SoftwareSerial.h>
-#include <ESP8266WiFi.h>
-#include <BlynkSimpleEsp8266.h>
+#include <BlynkSimpleEsp32.h>
 #include <Adafruit_I2CDevice.h>
 #include <RTClib.h>
 
@@ -390,8 +388,8 @@ void setup() {
   Serial.begin(115200);
   Serial.println("[    ] IrriGator");
  
-  // SDA on GPIO0, SCL on GPIO2
-  Wire.begin(0, 2);
+  // SDA on GPIO11, SCL on GPIO22
+  Wire.begin();
   Serial.println("[ OK ] I2C init");
 
   User.begin();

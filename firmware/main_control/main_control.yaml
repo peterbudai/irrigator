@@ -2,6 +2,12 @@
 esphome:
   name: irrigator
 
+external_components:
+  - source:
+      type: local
+      path: components
+    components: [status_select]
+
 # Board configuration
 esp32:
   board: esp32dev
@@ -59,6 +65,13 @@ packages:
     vars:
       valve_number: 2
       valve_bit: 1
+
+status_select:
+  - id: system_status_light
+    output: red_status_light
+    idle_option: "Blinking slow"
+    warning_option: "Blinking fast"
+    error_option: "Steady on"
 
 sensor:
   - platform: template

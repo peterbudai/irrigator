@@ -1,0 +1,41 @@
+sensor:
+  - platform: template
+    id: valve_sensor_${valve_number}
+    update_interval: 1s
+    lambda: |-
+      uint8_t state = 0;
+      auto error = id(relay_control).read(&state, 1);
+      if(error != ERROR_OK) {
+        ESP_LOGW("valve_sensor", "Relay controller read error: %d", error);
+        return NAN;
+      }
+      ESP_LOGD("valve_sensor", "Relay controller state: 0x%02X", state);
+      return (state & (1 << ${valve_bit})) != 0 ? 1.0 : 0.0;
+
+switch:
+  - platform: template
+    id: valve_switch_${valve_number}
+    name: "Irrigation valve ${valve_number}"
+    icon: "mdi:valve"
+    disabled_by_default: true
+    restore_mode: ALWAYS_OFF
+    lambda: |-
+      return id(valve_sensor_${valve_number}).state > 0.5;
+    turn_on_action:
+      - lambda: |-
+          uint8_t state = (1 << ${valve_bit}) | 0x20;
+          auto error = id(relay_control).write(&state, 1);
+          if(error != ERROR_OK) {
+            ESP_LOGW("valve_switch", "Relay controller write error: %d", error);
+            return;
+          }
+          ESP_LOGD("valve_switch", "Relay controller set state: 0x%02X", state);
+    turn_off_action:
+      - lambda: |-
+          uint8_t state = (1 << ${valve_bit}) | 0x10;
+          auto error = id(relay_control).write(&state, 1);
+          if(error != ERROR_OK) {
+            ESP_LOGW("valve_switch", "Relay controller write error: %d", error);
+            return;
+          }
+          ESP_LOGD("valve_switch", "Relay controller set state: 0x%02X", state);

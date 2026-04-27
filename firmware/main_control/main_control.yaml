@@ -1,0 +1,141 @@
+# Basic ESPHome settings
+esphome:
+  name: irrigator
+
+# Board configuration
+esp32:
+  board: esp32dev
+  framework:
+    type: esp-idf
+
+# Enable logging
+logger:
+
+# Enable Home Assistant API and OTA
+api:
+  encryption:
+    key: !secret irrigator_api_key
+
+ota:
+  - platform: esphome
+    password: !secret irrigator_ota_password
+
+# Enable WiFi connection
+wifi:
+  ssid: !secret irrigator_wifi_ssid
+  password: !secret irrigator_wifi_password
+
+# Enable I2C bus to talk to on-board peripherals
+i2c:
+
+i2c_device:
+  - id: user_control
+    address: 0x0B
+  - id: relay_control
+    address: 0x0A
+
+packages:
+  red_status_light: !include
+    file: status_light.yaml
+    vars:
+      status_light_tag: red
+      status_light_name: "Red light"
+      status_bit_shift: 0
+      status_set_mask: 0x10
+  blue_status_light: !include
+    file: status_light.yaml
+    vars:
+      status_light_tag: blue
+      status_light_name: "Blue light"
+      status_bit_shift: 2
+      status_set_mask: 0x20
+  valve_switch_1: !include
+    file: valve_switch.yaml
+    vars:
+      valve_number: 1
+      valve_bit: 0
+  valve_switch_2: !include
+    file: valve_switch.yaml
+    vars:
+      valve_number: 2
+      valve_bit: 1
+
+sensor:
+  - platform: template
+    id: button_sensor
+    update_interval: 1s
+    lambda: |-
+      uint8_t state = 0;
+      auto error = id(user_control).read(&state, 1);
+      if(error != ERROR_OK) {
+        ESP_LOGW("button_sensor", "User controller read error: %d", error);
+        return NAN;
+      }
+      ESP_LOGD("button_sensor", "User controller state: 0x%02X", state);
+      return (state & 0x80) != 0 ? 1.0 : 0.0;
+  - platform: template
+    id: "sprinkler_time_remaining"
+    name: "Sprinkler time remaining"
+    disabled_by_default: false
+    icon: "mdi:timer-sand"
+    unit_of_measurement: "s"
+    update_interval: 5s
+    lambda: |-
+      auto remaining = id(sprinkler_control).time_remaining_current_operation();
+      if(remaining.has_value()) {
+        return remaining.value();
+      } else {
+        return NAN;
+      }
+
+binary_sensor:
+  - platform: template
+    id: physical_button
+    name: "Physical button"
+    icon: "mdi:button-pointer"
+    disabled_by_default: true
+    condition:
+      - sensor.in_range:
+          id: button_sensor
+          above: 0.5
+    on_press:
+      - lambda: |-
+          ESP_LOGI("physical_button", "Physical button pressed");
+          uint8_t state = 0x80; // Clear button state
+          auto error = id(user_control).write(&state, 1);
+          if(error != ERROR_OK) {
+            ESP_LOGW("physical_button", "User controller write error: %d", error);
+            return;
+          }
+          ESP_LOGD("physical_button", "User controller set state: 0x%02X", state);
+      - if:
+          condition:
+            lambda: |-
+              return id(sprinkler_control).active_valve().has_value();
+          then:
+            - sprinkler.shutdown: sprinkler_control
+          else:
+            - sprinkler.start_full_cycle: sprinkler_control
+
+sprinkler:
+  - id: sprinkler_control
+    standby_switch:
+      name: "Sprinkler disabled"
+      icon: "mdi:power-standby"
+      disabled_by_default: false
+      inverted: true
+    valves:
+      - id: lawn_sprinkler
+        valve_switch:
+          name: "Lawn sprinkler"
+        run_duration_number:
+          name: "Lawn watering seconds"
+          initial_value: 10
+          min_value: 10
+          max_value: 1200
+          step: 10
+          icon: "mdi:timer-outline"
+        valve_switch_id: valve_switch_1
+        pump_switch_id: valve_switch_2
+    pump_start_valve_delay: 1s
+    pump_stop_valve_delay: 1s

@@ -1,6 +1,7 @@
 # Basic ESPHome settings
 esphome:
   name: irrigator
+  friendly_name: IrriGator
 
 external_components:
   - source:

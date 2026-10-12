@@ -9,6 +9,8 @@ using active-high digital signals.
 ********************************************************************************/
 
 #include <stdint.h>
+#include <stddef.h>
+#include <stdbool.h>
 #include <avr/interrupt.h>
 #include <avr/sleep.h>
 #include <avr/wdt.h>
@@ -21,72 +23,77 @@ using active-high digital signals.
 
 // This will be the I2C address of this slave controller
 #define I2C_ADDR 0x0A
+// How many relays are controlled via I2C registers
+#define RELAY_COUNT 2
 
-// Command byte constants
-#define CMD_MASK 0xF0
-#define CMD_OFF 0x10
-#define CMD_ON 0x20
-#define CMD_SET 0x30
+typedef struct {
+    // Desired state of the relay (1: on, 0: off)
+    uint8_t state;
+    // Bitmask for controlling the relay pin on PORTB
+    uint8_t mask;
+} relay_t;
 
-#define RELAY_MASK 0x03
-#define RELAY_1 PB3             // Relay 1 is connected to PORTB3
-#define RELAY_2 PB4             // Relay 2 is connected to PORTB4
+// Relay configuration
+static relay_t relays[RELAY_COUNT] = {
+    {0, _BV(PB3)},              // Relay 0 is connected to PORTB3
+    {0, _BV(PB4)},              // Relay 1 is connected to PORTB4
+};
+
+// Which I2C register is currently addressed (set by the last register-select byte)
+static uint8_t relay_select = 0;
 
 // ------------------------------------------------------------- 
 // Callback functions for I2C communication
 // -------------------------------------------------------------
 
-// Handle I2C data sent from master. Accepts a single command byte.
-//
-// Command byte structure:
-// Bit 7 6 5 4 3 2 1 0
-//     \--+--/ \+/ | |
-//        |     |  | +-- Relay 1 select/state
-//        |     |  +---- Relay 2 select/state
-//        |     +------- Unused (ignored, should be 0)
-//        +------------- Command
+// Handle I2C data sent from master: register-select (1 byte) or register
+// write (2 bytes: register, value). STOP-triggered flushing means amount is
+// normally 1 or 2; any further bytes are drained (not applied) so a stray
+// extra byte can't permanently misalign the next message.
 //
 // This function gets called from the USI interrupt handler.
 static void onReceive(uint8_t amount) {
-    while(amount--) {
-        // Read next command byte from I2C input buffer
-        uint8_t command = usiTwiReceiveByte();
+    // First byte is always the register select
+    uint8_t reg = usiTwiReceiveByte();
+    amount--;
 
-        // Execute command
-        switch(command & CMD_MASK) {
-            case CMD_OFF:
-                // Turn the specified relays off
-                PORTB &= ~((command & RELAY_MASK) << RELAY_1);
-                break;
-            case CMD_ON:
-                // Turn the specified relays on
-                PORTB |= (command & RELAY_MASK) << RELAY_1;
-                break;
-            case CMD_SET:
-                // Set the relays to the specified state (on: 1, off: 0)
-                PORTB = (PORTB & ~(_BV(RELAY_2) | _BV(RELAY_1))) | ((command & RELAY_MASK) << RELAY_1);
-                break;
-            default:
-                // Unknown or ping command, do nothing
-                break;
+    bool valid_reg = reg < RELAY_COUNT;
+    if(valid_reg) {
+        relay_select = reg;
+    }
+
+    if(amount) {
+        // A second byte present in the same batch means it's a write
+        uint8_t value = usiTwiReceiveByte();
+        amount--;
+
+        // Drop the value entirely if the register select was invalid,
+        // instead of misapplying it to the previously selected register
+        if(valid_reg && value <= 1) {
+            relays[relay_select].state = value;
+
+            if(value) {
+                PORTB |= relays[relay_select].mask;
+            } else {
+                PORTB &= ~relays[relay_select].mask;
+            }
         }
     }
+
+    // Drain any unexpected extra bytes so the buffer can't desync
+    while(amount--) {
+        usiTwiReceiveByte();
+    }
+
     wdt_reset();
 }
 
-// Handle I2C data read by master. Returns relay status in a single byte.
-//
-// Status byte structure:
-// Bit 7 6 5 4 3 2 1 0
-//     \----+----/ | |
-//          |      | +-- Relay 1 state (on: 1, off: 0)
-//          |      +---- Relay 2 state (on: 1, off: 0)
-//          +----------- Unused (set to 0)
+// Handle I2C data read by master. Returns the state of the currently
+// selected relay register.
 //
 // This function gets called from the USI interrupt handler.
 static void onRequest(void) {
-    uint8_t state = (PORTB & (_BV(RELAY_2) | _BV(RELAY_1))) >> RELAY_1;
-    usiTwiTransmitByte(state);
+    usiTwiTransmitByte(relays[relay_select].state);
     wdt_reset();
 }
 
@@ -102,8 +109,10 @@ int main(void) {
     //
 
     // Relay control ports PB3 and PB4 as outputs (initially LOW)
-    DDRB |= _BV(RELAY_2) | _BV(RELAY_1);
-    PORTB &= ~(_BV(RELAY_2) | _BV(RELAY_1));
+    for(uint8_t i = 0; i < RELAY_COUNT; i++) {
+        DDRB |= relays[i].mask;
+        PORTB &= ~relays[i].mask;
+    }
 
     // I2C inputs on pins PB2 and PB0
     usiTwiSlaveInit(I2C_ADDR, onReceive, onRequest);
@@ -125,6 +134,12 @@ int main(void) {
     // Safety measure: if I2C master or bus hangs, better turn off relays and reinit
     wdt_enable(WDTO_8S);
     for (;;) {
-        sleep_cpu();
+        if (usiTwiTransactionActive()) {
+            // USI has no Stop interrupt, so Stop must be polled; can't sleep
+            // through it or a pending write would never get flushed
+            usiTwiCheckStop();
+        } else {
+            sleep_cpu();
+        }
     }
 }

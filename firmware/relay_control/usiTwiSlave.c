@@ -258,15 +258,6 @@ Change Activity:
     } \
 }
 
-#define ONSTOP_USI_RECEIVE_CALLBACK() \
-{ \
-    if (USISR & ( 1 << USIPF )) \
-    { \
-        USI_RECEIVE_CALLBACK(); \
-    } \
-}
-
-
 #define USI_REQUEST_CALLBACK() \
 { \
     USI_RECEIVE_CALLBACK(); \
@@ -302,6 +293,11 @@ static usi_onReceive_t          onReceivePtr;
 static usi_onRequest_t          onRequestPtr;
 
 static volatile overflowState_t overflowState;
+
+// Tracks whether a TWI transaction is in progress (Start seen, Stop not yet
+// seen). USI has no Stop interrupt, so Stop can only be detected by polling
+// USIPF - the caller must keep polling (not sleep) while this is true.
+static volatile bool             transactionActive;
 
 static uint8_t          rxBuf[ USI_TWI_RX_BUFFER_SIZE ];
 static volatile uint8_t rxHead;
@@ -355,6 +351,7 @@ void usiTwiSlaveInit( uint8_t ownAddress, usi_onReceive_t receiveFunc, usi_onReq
   slaveAddress = ownAddress;
   onReceivePtr = receiveFunc;
   onRequestPtr = requestFunc;
+  transactionActive = false;
 
   // In Two Wire mode (USIWM1, USIWM0 = 1X), the slave USI will pull SCL
   // low when a start condition is detected or a counter overflow (only
@@ -400,6 +397,36 @@ bool usiTwiDataInTransmitBuffer( void )
   return txCount;
 
 } // end usiTwiDataInTransmitBuffer
+
+
+// true from Start condition until Stop has been observed via usiTwiCheckStop
+
+bool usiTwiTransactionActive( void )
+{
+
+  return transactionActive;
+
+} // end usiTwiTransactionActive
+
+
+// poll for a Stop condition and flush any pending received bytes to the
+// application once the transaction has ended; call this instead of sleeping
+// whenever usiTwiTransactionActive() is true
+
+void usiTwiCheckStop( void )
+{
+
+  if ( USISR & ( 1 << USIPF ) )
+  {
+    // clear the Stop Condition flag
+    USISR |= ( 1 << USIPF );
+
+    transactionActive = false;
+
+    USI_RECEIVE_CALLBACK();
+  } // end if
+
+} // end usiTwiCheckStop
 
 
 // put data in the transmission buffer, wait if buffer is full
@@ -458,15 +485,6 @@ uint8_t usiTwiDataInReceiveBuffer(void)
 ISR( USI_START_VECTOR )
 {
 
-  /*
-  // This triggers on second write, but claims to the callback there is only *one* byte in buffer
-  ONSTOP_USI_RECEIVE_CALLBACK();
-  */
-  /*
-  // This triggers on second write, but claims to the callback there is only *one* byte in buffer
-  USI_RECEIVE_CALLBACK();
-  */
-
   // set default starting conditions for new TWI package
   overflowState = USI_SLAVE_CHECK_ADDRESS;
 
@@ -491,6 +509,8 @@ ISR( USI_START_VECTOR )
 
     // a Stop Condition did not occur
 
+    transactionActive = true;
+
     USICR =
          // keep Start Condition Interrupt enabled to detect RESTART
          ( 1 << USISIE ) |
@@ -508,6 +528,9 @@ ISR( USI_START_VECTOR )
   else
   {
     // a Stop Condition did occur
+
+    transactionActive = false;
+    USI_RECEIVE_CALLBACK();
 
     USICR =
          // enable Start Condition Interrupt

@@ -56,6 +56,8 @@ void    usiTwiTransmitByte( uint8_t );
 uint8_t usiTwiReceiveByte( void );
 bool    usiTwiDataInTransmitBuffer( void );
 uint8_t usiTwiDataInReceiveBuffer( void );
+bool    usiTwiTransactionActive( void );
+void    usiTwiCheckStop( void );
 
 
 /********************************************************************************

@@ -60,12 +60,10 @@ packages:
     file: valve_switch.yaml
     vars:
       valve_number: 1
-      valve_bit: 0
   valve_switch_2: !include
     file: valve_switch.yaml
     vars:
       valve_number: 2
-      valve_bit: 1
 
 status_select:
   - id: system_status_light

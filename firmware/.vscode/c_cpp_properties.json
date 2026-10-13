@@ -1,0 +1,19 @@
+{
+    "configurations": [
+        {
+            "name": "AVR",
+            "includePath": [
+                "${workspaceFolder}/**"
+            ],
+            "defines": [],
+            "compilerPath": "/usr/bin/avr-gcc",
+            "cStandard": "gnu99",
+            "cppStandard": "gnu++20",
+            "intelliSenseMode": "${default}",
+            "compilerArgs": [
+                "-mmcu=attiny45"
+            ]
+        }
+    ],
+    "version": 4
+}

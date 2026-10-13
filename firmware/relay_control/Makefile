@@ -5,6 +5,7 @@ USB_PORT ?= 0
 CONFIG ?= 
 
 SRC_DIR = .
+LIB_DIR = ../lib
 TARGET = relay_control
 TARGET_DIR = ../out/$(TARGET)
 FORMAT = ihex
@@ -30,7 +31,8 @@ REMOVE = rm -r
 MKDIR = mkdir -p
 
 # Collect source and intermediary files
-SRC = $(wildcard $(SRC_DIR)/*.c)
+VPATH = $(SRC_DIR):$(LIB_DIR)
+SRC = $(wildcard $(SRC_DIR)/*.c) $(wildcard $(LIB_DIR)/*.c)
 OBJ = $(addprefix $(TARGET_DIR)/,$(notdir $(SRC:.c=.o)))
 
 # Compiler flags to generate dependency files.
@@ -38,7 +40,7 @@ GENDEPFLAGS = -Wp,-M,-MP,-MT,$(TARGET_DIR)/$(*F).o,-MF,$(TARGET_DIR)/$(@F).d
 
 # Combine all necessary flags and optional flags.
 # Add target processor to flags.
-ALL_CFLAGS = -mmcu=$(MCU) -I$(SRC_DIR) $(CFLAGS) $(CDEFS) $(GENDEPFLAGS)
+ALL_CFLAGS = -mmcu=$(MCU) -I$(SRC_DIR) -I$(LIB_DIR) $(CFLAGS) $(CDEFS) $(GENDEPFLAGS)
 ALL_LDFLAGS = $(LDFLAGS)
 
 AVRDUDE_WRITE_FLASH = -U flash:w:$(TARGET_DIR)/$(TARGET).hex
@@ -90,8 +92,8 @@ $(TARGET_DIR)/%.sym: $(TARGET_DIR)/%.elf | $(TARGET_DIR)
 $(TARGET_DIR)/%.elf: $(OBJ) | $(TARGET_DIR)
 	$(CC) $(ALL_CFLAGS) -o $@ $(OBJ) $(ALL_LDFLAGS)
 
-# Compile: create object files from C source files
-$(TARGET_DIR)/%.o : $(SRC_DIR)/%.c | $(TARGET_DIR)
+# Compile: create object files from C source files (resolved via VPATH)
+$(TARGET_DIR)/%.o : %.c | $(TARGET_DIR)
 	$(CC) $(ALL_CFLAGS) -c -o $@ $<
 
 # Include the dependency files

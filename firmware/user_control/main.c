@@ -147,6 +147,12 @@ int main(void) {
     // Safety measure: if I2C master or bus hangs, better reinit to a known state
     wdt_enable(WDTO_8S);
     for (;;) {
-        sleep_cpu();
+        if (usiTwiTransactionActive()) {
+            // USI has no Stop interrupt, so Stop must be polled; can't sleep
+            // through it or a pending write would never get flushed
+            usiTwiCheckStop();
+        } else {
+            sleep_cpu();
+        }
     }
 }

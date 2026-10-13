@@ -13,6 +13,17 @@
             "compilerArgs": [
                 "-mmcu=attiny45"
             ]
+        },
+        {
+            "name": "ESPHome",
+            "includePath": [
+                "${workspaceFolder}/**"
+            ],
+            "defines": [],
+            "compilerPath": "/usr/bin/gcc",
+            "cStandard": "gnu23",
+            "cppStandard": "gnu++20",
+            "intelliSenseMode": "linux-gcc-x64"
         }
     ],
     "version": 4

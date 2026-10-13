@@ -3,8 +3,7 @@ esphome:
   name: irrigator
   friendly_name: IrriGator
   includes:
-    - relay_helpers.h
-    - user_control_helpers.h
+    - i2c_helpers.h
 
 external_components:
   - source:
@@ -78,11 +77,11 @@ sensor:
     id: button_sensor
     update_interval: 1s
     lambda: |-
-      uint8_t state = 0;
-      if(!read_user_control_register(id(user_control), 2, &state)) {
+      auto state = read_i2c_register(id(user_control), 2, "button_sensor");
+      if(!state.has_value()) {
         return NAN;
       }
-      return state != 0 ? 1.0 : 0.0;
+      return state.value() != 0 ? 1.0 : 0.0;
   - platform: template
     id: "sprinkler_time_remaining"
     name: "Sprinkler time remaining"
@@ -111,7 +110,7 @@ binary_sensor:
     on_press:
       - lambda: |-
           ESP_LOGI("physical_button", "Physical button pressed");
-          write_user_control_register(id(user_control), 2, 0); // register 2: button, write 0 to ack
+          write_i2c_register(id(user_control), 2, 0, "physical_button"); // register 2: button, write 0 to ack
       - if:
           condition:
             lambda: |-

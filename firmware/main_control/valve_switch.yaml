@@ -3,7 +3,11 @@ sensor:
     id: valve_sensor_${valve_number}
     update_interval: 1s
     lambda: |-
-      return read_relay_register(id(relay_control), ${valve_number} - 1);
+      auto state = read_i2c_register(id(relay_control), ${valve_number} - 1, "valve_sensor");
+      if(!state.has_value()) {
+        return NAN;
+      }
+      return state.value() != 0 ? 1.0 : 0.0;
 
 switch:
   - platform: template
@@ -16,7 +20,7 @@ switch:
       return id(valve_sensor_${valve_number}).state > 0.5;
     turn_on_action:
       - lambda: |-
-          write_relay_register(id(relay_control), ${valve_number} - 1, 1);
+          write_i2c_register(id(relay_control), ${valve_number} - 1, 1, "valve_switch");
     turn_off_action:
       - lambda: |-
-          write_relay_register(id(relay_control), ${valve_number} - 1, 0);
+          write_i2c_register(id(relay_control), ${valve_number} - 1, 0, "valve_switch");

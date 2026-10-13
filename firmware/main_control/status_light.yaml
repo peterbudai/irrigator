@@ -11,11 +11,11 @@ select:
       - "Steady on"
     update_interval: 1s
     lambda: |-
-      uint8_t state = 0;
-      if(!read_user_control_register(id(user_control), ${status_register}, &state)) {
+      auto state = read_i2c_register(id(user_control), ${status_register}, "status_light");
+      if(!state.has_value()) {
         return {};
       }
-      return id(${status_light_tag}_status_light).at(state);
+      return id(${status_light_tag}_status_light).at(state.value());
     set_action:
       - lambda: |-
           auto value = id(${status_light_tag}_status_light).index_of(x);
@@ -23,4 +23,4 @@ select:
             ESP_LOGW("status_light", "Unknown light option: %s", x.c_str());
             return;
           }
-          write_user_control_register(id(user_control), ${status_register}, value.value());
+          write_i2c_register(id(user_control), ${status_register}, value.value(), "status_light");

@@ -2,6 +2,8 @@
 esphome:
   name: irrigator
   friendly_name: IrriGator
+  includes:
+    - relay_helpers.h
 
 external_components:
   - source:

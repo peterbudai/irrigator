@@ -13,7 +13,6 @@ Header file for LED output control.
 // -------------------------------------------------------------
 
 // Valid LED states
-#define LED_MASK 0x03
 #define LED_STEADY_OFF 0x00
 #define LED_BLINK_SLOW 0x01
 #define LED_BLINK_FAST 0x02

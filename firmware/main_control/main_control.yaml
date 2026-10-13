@@ -4,6 +4,7 @@ esphome:
   friendly_name: IrriGator
   includes:
     - relay_helpers.h
+    - user_control_helpers.h
 
 external_components:
   - source:
@@ -49,15 +50,13 @@ packages:
     vars:
       status_light_tag: red
       status_light_name: "Red light"
-      status_bit_shift: 0
-      status_set_mask: 0x10
+      status_register: 0
   blue_status_light: !include
     file: status_light.yaml
     vars:
       status_light_tag: blue
       status_light_name: "Blue light"
-      status_bit_shift: 2
-      status_set_mask: 0x20
+      status_register: 1
   valve_switch_1: !include
     file: valve_switch.yaml
     vars:
@@ -80,13 +79,10 @@ sensor:
     update_interval: 1s
     lambda: |-
       uint8_t state = 0;
-      auto error = id(user_control).read(&state, 1);
-      if(error != ERROR_OK) {
-        ESP_LOGW("button_sensor", "User controller read error: %d", error);
+      if(!read_user_control_register(id(user_control), 2, &state)) {
         return NAN;
       }
-      ESP_LOGD("button_sensor", "User controller state: 0x%02X", state);
-      return (state & 0x80) != 0 ? 1.0 : 0.0;
+      return state != 0 ? 1.0 : 0.0;
   - platform: template
     id: "sprinkler_time_remaining"
     name: "Sprinkler time remaining"
@@ -115,13 +111,7 @@ binary_sensor:
     on_press:
       - lambda: |-
           ESP_LOGI("physical_button", "Physical button pressed");
-          uint8_t state = 0x80; // Clear button state
-          auto error = id(user_control).write(&state, 1);
-          if(error != ERROR_OK) {
-            ESP_LOGW("physical_button", "User controller write error: %d", error);
-            return;
-          }
-          ESP_LOGD("physical_button", "User controller set state: 0x%02X", state);
+          write_user_control_register(id(user_control), 2, 0); // register 2: button, write 0 to ack
       - if:
           condition:
             lambda: |-

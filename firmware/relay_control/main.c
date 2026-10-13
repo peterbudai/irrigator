@@ -57,8 +57,7 @@ static void onReceive(uint8_t amount) {
     uint8_t reg = usiTwiReceiveByte();
     amount--;
 
-    bool valid_reg = reg < RELAY_COUNT;
-    if(valid_reg) {
+    if(reg < RELAY_COUNT) {
         relay_select = reg;
     }
 
@@ -69,7 +68,7 @@ static void onReceive(uint8_t amount) {
 
         // Drop the value entirely if the register select was invalid,
         // instead of misapplying it to the previously selected register
-        if(valid_reg && value <= 1) {
+        if(reg < RELAY_COUNT && value <= 1) {
             relays[relay_select].state = value;
 
             if(value) {

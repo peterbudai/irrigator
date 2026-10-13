@@ -31,8 +31,8 @@ at each 1/10th second time slice (R: red, B: blue, P: purple).
 // Internal constants
 // -------------------------------------------------------------
 
-#define LED_1 PB3             // LED 1 (red) is connected to PORTB3
-#define LED_2 PB4             // LED 2 (blue) is connected to PORTB4
+#define LED_0 PB3             // LED 0 (red) is connected to PORTB3
+#define LED_1 PB4             // LED 1 (blue) is connected to PORTB4
 
 // ------------------------------------------------------------- 
 // State variables
@@ -52,8 +52,8 @@ void ledInit(void) {
     led_timer = 0;
 
     // LED control ports PB3 and PB4 as outputs (initially LOW)
-    DDRB |= _BV(LED_2) | _BV(LED_1);
-    PORTB &= ~(_BV(LED_2) | _BV(LED_1));
+    DDRB |= _BV(LED_1) | _BV(LED_0);
+    PORTB &= ~(_BV(LED_1) | _BV(LED_0));
 }
 
 // LED timer tick callback.
@@ -69,6 +69,59 @@ void ledTick(void) {
     // Light pattern for the first LED
     switch (led_state[0]) {
         case LED_STEADY_ON:
+            PORTB |= _BV(LED_0);                // 0..4999 ON
+            break;
+        case LED_BLINK_FAST:
+            // Binary search, to minimize the number of comparisons
+            if (led_timer < 25) {
+                if (led_timer < 10) {
+                    if (led_timer < 5) {
+                        PORTB |= _BV(LED_0);    // 0..499 ON
+                    } else {
+                        PORTB &= ~_BV(LED_0);   // 500..999 OFF
+                    }
+                } else {
+                    if (led_timer < 15) {
+                        PORTB |= _BV(LED_0);    // 1000..1499 ON
+                    } else if (led_timer < 20) {
+                        PORTB &= ~_BV(LED_0);   // 1500..1999 OFF
+                    } else {
+                        PORTB |= _BV(LED_0);    // 2000..2499 ON
+                    }
+                }
+            } else {
+                if (led_timer < 40) {
+                    if (led_timer < 30) {
+                        PORTB &= ~_BV(LED_0);   // 2500..2999 OFF
+                    } else if (led_timer < 35) {
+                        PORTB |= _BV(LED_0);    // 3000..3499 ON
+                    } else {
+                        PORTB &= ~_BV(LED_0);   // 3500..3999 OFF
+                    }
+                } else {
+                    if (led_timer < 45) {
+                        PORTB |= _BV(LED_0);    // 4000..4499 ON
+                    } else {
+                        PORTB &= ~_BV(LED_0);   // 4500..4999 OFF
+                    }
+                }
+            }
+            break;
+        case LED_BLINK_SLOW:
+            if (led_timer < 1) {
+                PORTB |= _BV(LED_0);            // 0..99 ON
+            } else {
+                PORTB &= ~_BV(LED_0);           // 100..4999 OFF
+            }
+            break;
+        default:
+            PORTB &= ~_BV(LED_0);               // 0..4999 OFF
+            break;
+    }
+
+    // Light pattern for the second LED
+    switch(led_state[1]) {
+        case LED_STEADY_ON:
             PORTB |= _BV(LED_1);                // 0..4999 ON
             break;
         case LED_BLINK_FAST:
@@ -76,102 +129,49 @@ void ledTick(void) {
             if (led_timer < 25) {
                 if (led_timer < 10) {
                     if (led_timer < 5) {
-                        PORTB |= _BV(LED_1);    // 0..499 ON
+                        PORTB &= ~_BV(LED_1);   // 0..499 OFF
                     } else {
-                        PORTB &= ~_BV(LED_1);   // 500..999 OFF
+                        PORTB |= _BV(LED_1);    // 500..999 ON
                     }
                 } else {
                     if (led_timer < 15) {
-                        PORTB |= _BV(LED_1);    // 1000..1499 ON
+                        PORTB &= ~_BV(LED_1);   // 1000..1499 OFF
                     } else if (led_timer < 20) {
-                        PORTB &= ~_BV(LED_1);   // 1500..1999 OFF
+                        PORTB |= _BV(LED_1);    // 1500..1999 ON
                     } else {
-                        PORTB |= _BV(LED_1);    // 2000..2499 ON
+                        PORTB &= ~_BV(LED_1);   // 2000..2499 OFF
                     }
                 }
             } else {
                 if (led_timer < 40) {
                     if (led_timer < 30) {
-                        PORTB &= ~_BV(LED_1);   // 2500..2999 OFF
+                        PORTB |= _BV(LED_1);    // 2500..2999 ON
                     } else if (led_timer < 35) {
-                        PORTB |= _BV(LED_1);    // 3000..3499 ON
+                        PORTB &= ~_BV(LED_1);   // 3000..3499 OFF
                     } else {
-                        PORTB &= ~_BV(LED_1);   // 3500..3999 OFF
+                        PORTB |= _BV(LED_1);    // 3500..3999 ON
                     }
                 } else {
                     if (led_timer < 45) {
-                        PORTB |= _BV(LED_1);    // 4000..4499 ON
+                        PORTB &= ~_BV(LED_1);   // 4000..4499 OFF
                     } else {
-                        PORTB &= ~_BV(LED_1);   // 4500..4999 OFF
-                    }
-                }
-            }
-            break;
-        case LED_BLINK_SLOW:
-            if (led_timer < 1) {
-                PORTB |= _BV(LED_1);            // 0..99 ON
-            } else {
-                PORTB &= ~_BV(LED_1);           // 100..4999 OFF
-            }
-            break;
-        default:
-            PORTB &= ~_BV(LED_1);               // 0..4999 OFF
-            break;
-    }
-
-    // Light pattern for the second LED
-    switch(led_state[1]) {
-        case LED_STEADY_ON:
-            PORTB |= _BV(LED_2);                // 0..4999 ON
-            break;
-        case LED_BLINK_FAST:
-            // Binary search, to minimize the number of comparisons
-            if (led_timer < 25) {
-                if (led_timer < 10) {
-                    if (led_timer < 5) {
-                        PORTB &= ~_BV(LED_2);   // 0..499 OFF
-                    } else {
-                        PORTB |= _BV(LED_2);    // 500..999 ON
-                    }
-                } else {
-                    if (led_timer < 15) {
-                        PORTB &= ~_BV(LED_2);   // 1000..1499 OFF
-                    } else if (led_timer < 20) {
-                        PORTB |= _BV(LED_2);    // 1500..1999 ON
-                    } else {
-                        PORTB &= ~_BV(LED_2);   // 2000..2499 OFF
-                    }
-                }
-            } else {
-                if (led_timer < 40) {
-                    if (led_timer < 30) {
-                        PORTB |= _BV(LED_2);    // 2500..2999 ON
-                    } else if (led_timer < 35) {
-                        PORTB &= ~_BV(LED_2);   // 3000..3499 OFF
-                    } else {
-                        PORTB |= _BV(LED_2);    // 3500..3999 ON
-                    }
-                } else {
-                    if (led_timer < 45) {
-                        PORTB &= ~_BV(LED_2);   // 4000..4499 OFF
-                    } else {
-                        PORTB |= _BV(LED_2);    // 4500..4999 ON
+                        PORTB |= _BV(LED_1);    // 4500..4999 ON
                     }
                 }
             }
             break;
         case LED_BLINK_SLOW:
             if (led_timer < 10) {                // 0..999 OFF
-                PORTB &= ~_BV(LED_2);
+                PORTB &= ~_BV(LED_1);
             } else if (led_timer < 11) {        // 1000..1099 ON
-                PORTB |= _BV(LED_2);
+                PORTB |= _BV(LED_1);
             } else {
-                PORTB &= ~_BV(LED_2);           // 1100..4999 OFF
+                PORTB &= ~_BV(LED_1);           // 1100..4999 OFF
             }
             break;
         case LED_STEADY_OFF:
         default:
-            PORTB &= ~_BV(LED_2);               // 0..4999 OFF
+            PORTB &= ~_BV(LED_1);               // 0..4999 OFF
             break;
     }
 }

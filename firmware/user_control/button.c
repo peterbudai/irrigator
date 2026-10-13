@@ -27,8 +27,8 @@ but checking the input level periodically.
 // State variables
 // -------------------------------------------------------------
 
-// Operational state of the two LEDs.
-volatile bool button_pressed;
+// Registers whether the button has been pressed since last acknowledged.
+volatile uint8_t button_pressed;
 // Last stable state of the pushbutton (1: released, 0: pushed)
 volatile uint8_t button_state;
 // Number of milliseconds elapsed since changing from stable state.
@@ -37,7 +37,7 @@ volatile uint8_t button_timer;
 // Init button port and timers.
 void buttonInit(void) {
     // Set initial state
-    button_pressed = false;
+    button_pressed = 0;
     button_state = BUTTON_RELEASED;
     button_timer = 0;
 
@@ -71,6 +71,6 @@ void buttonTick(void) {
 
     // If button press event detected, save it
     if (button_state == BUTTON_PRESSED) {
-        button_pressed = true;
+        button_pressed = 1;
     }
 }

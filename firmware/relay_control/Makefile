@@ -42,7 +42,7 @@ ALL_CFLAGS = -mmcu=$(MCU) -I$(SRC_DIR) $(CFLAGS) $(CDEFS) $(GENDEPFLAGS)
 ALL_LDFLAGS = $(LDFLAGS)
 
 AVRDUDE_WRITE_FLASH = -U flash:w:$(TARGET_DIR)/$(TARGET).hex
-AVRDUDE_FLAGS = -p $(MCU) -c $(AVRDUDE_PROGRAMMER) -P $(AVRDUDE_PORT) -b $(AVRDUDE_BAUD)
+AVRDUDE_FLAGS = -p $(MCU) -c $(AVRDUDE_PROGRAMMER) -P $(AVRDUDE_PORT) -b $(AVRDUDE_BAUD) -B 125kHz
 
 # ---------------------------------------------------------------------------
 
